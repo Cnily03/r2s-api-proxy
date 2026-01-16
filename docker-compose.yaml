@@ -1,0 +1,16 @@
+name: r2s-api-proxy
+
+services:
+  r2s-api-proxy:
+    image: ghcr.io/cnily03/r2s-api-proxy:latest
+    container_name: r2s-api-proxy
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+      RUST_LOG: info
+      AUTH_TOKEN: "your_auth_token_here"
+    volumes:
+      - ./data:/data
+    ports:
+      - "8080:8080"
+    command: ["--endpoint", "https://ret.sh.cn/api", "--key", "your_api_key_here"]

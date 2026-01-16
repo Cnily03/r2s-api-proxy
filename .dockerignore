@@ -1,0 +1,13 @@
+.devcontainer
+.github
+.git
+.vscode
+.idea
+.dockerignore
+.gitignore
+target/
+node_modules/
+dist/
+.env
+.env.*
+README.md
