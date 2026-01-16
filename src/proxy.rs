@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Extension, Path, State},
+    extract::{Extension, OriginalUri, Path, State},
     http::{HeaderMap, HeaderValue, Method, StatusCode},
     response::{IntoResponse, Response},
 };
@@ -47,7 +47,7 @@ async fn do_proxy_request(
     state: AppState,
     token_cache: SharedTokenCache,
     method: Method,
-    path: &str,
+    path_and_query: &str,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
@@ -65,8 +65,8 @@ async fn do_proxy_request(
     let endpoint = state.endpoint().to_string();
 
     // Build target URL
-    let target_url = format!("{}{}", endpoint, path);
-    debug!("proxying request to {}", target_url);
+    let target_url = format!("{}{}", endpoint, path_and_query);
+    debug!(uri = %target_url, "proxying request");
 
     let client = reqwest::Client::new();
 
@@ -122,7 +122,7 @@ async fn do_proxy_request(
     let response = match request_builder.send().await {
         Ok(r) => r,
         Err(e) => {
-            debug!("proxy request failed: {}", e);
+            debug!(uri = %target_url, "proxy request failed: {}", e);
             return (
                 StatusCode::BAD_GATEWAY,
                 [("Content-Type", "text/plain")],
@@ -139,7 +139,7 @@ async fn do_proxy_request(
             cache_guard.store_auth_token(token_str.to_string()).await;
             info!(
                 "updated auth_token cache after requesting {}{}",
-                endpoint, path
+                endpoint, path_and_query
             );
         }
     }
@@ -165,6 +165,7 @@ pub async fn proxy_handler(
     State(state): State<AppState>,
     Extension(token_cache): Extension<SharedTokenCache>,
     path: Option<Path<String>>,
+    uri: OriginalUri,
     method: Method,
     headers: HeaderMap,
     body: Bytes,
@@ -173,7 +174,11 @@ pub async fn proxy_handler(
         Some(Path(p)) => format!("/{}", p),
         None => "/".to_string(),
     };
-    do_proxy_request(state, token_cache, method, &path, headers, body).await
+    let path_and_query = match uri.query() {
+        Some(q) => format!("{}?{}", path, q),
+        None => path.clone(),
+    };
+    do_proxy_request(state, token_cache, method, &path_and_query, headers, body).await
 }
 
 pub async fn ping(endpoint: &str, token_cache: SharedTokenCache) {
