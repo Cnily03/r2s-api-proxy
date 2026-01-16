@@ -4,13 +4,13 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use bytes::Bytes;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 use crate::state::{AppState, SharedTokenCache};
 
 fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
     headers
-        .get("Authorization")
+        .get("Proxy-Authorization")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.strip_prefix("Bearer "))
         .map(|s| s.to_string())
@@ -34,6 +34,15 @@ fn service_unavailable_response() -> Response {
         .into_response()
 }
 
+fn internal_server_error_response() -> Response {
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        [("Content-Type", "text/plain")],
+        "internal server error",
+    )
+        .into_response()
+}
+
 async fn do_proxy_request(
     state: AppState,
     token_cache: SharedTokenCache,
@@ -53,19 +62,6 @@ async fn do_proxy_request(
         return unauthorized_response();
     }
 
-    let cache_guard = token_cache.read().await;
-
-    // Check if service is available
-    if !cache_guard.is_valid() {
-        return service_unavailable_response();
-    }
-
-    let auth_token = match cache_guard.auth_token() {
-        Some(t) => t.clone(),
-        None => return service_unavailable_response(),
-    };
-    drop(cache_guard);
-
     let endpoint = state.endpoint().to_string();
 
     // Build target URL
@@ -76,9 +72,10 @@ async fn do_proxy_request(
 
     // Build proxied request headers
     let mut proxy_headers = reqwest::header::HeaderMap::new();
+    let mut has_authorization_header = false;
     for (name, value) in headers.iter() {
         if name.as_str().eq_ignore_ascii_case("authorization") {
-            continue;
+            has_authorization_header = true;
         }
         if name.as_str().eq_ignore_ascii_case("host") {
             continue;
@@ -90,11 +87,30 @@ async fn do_proxy_request(
         }
     }
 
-    // Set the auth token
-    if let Ok(auth_value) =
-        reqwest::header::HeaderValue::from_str(&format!("Bearer {}", auth_token))
-    {
-        proxy_headers.insert(reqwest::header::AUTHORIZATION, auth_value);
+    if !has_authorization_header {
+        let cache_guard = token_cache.read().await;
+
+        // Check if service is available
+        if !cache_guard.is_valid() {
+            return service_unavailable_response();
+        }
+
+        let auth_token = match cache_guard.auth_token() {
+            Some(t) => t.clone(),
+            None => return service_unavailable_response(),
+        };
+        drop(cache_guard);
+
+        // Set the auth token
+        match reqwest::header::HeaderValue::from_str(&format!("Bearer {}", auth_token)) {
+            Ok(auth_value) => {
+                proxy_headers.insert(reqwest::header::AUTHORIZATION, auth_value);
+            }
+            Err(_) => {
+                error!("failed to construct authorization header");
+                return internal_server_error_response();
+            }
+        }
     }
 
     // Make the request

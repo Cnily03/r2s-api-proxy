@@ -42,7 +42,7 @@ async fn main() {
     }
 
     info!(
-        "loading {} {} for application authorization",
+        "loading {} {} for application authentication",
         args.key.len(),
         if args.key.len() == 1 { "key" } else { "keys" }
     );
