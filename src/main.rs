@@ -111,7 +111,8 @@ async fn main() {
         proxy_router = proxy_router.route(&base_trimmed, any(proxy::proxy_handler));
     }
 
-    info!("proxy base endpoint set to: {}", args.base);
+    info!("proxy base set to: {}", args.base);
+    info!("proxying to endpoint: {}", args.endpoint);
 
     let app = Router::new()
         .merge(proxy_router)
