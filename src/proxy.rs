@@ -6,7 +6,6 @@ use axum::{
 use bytes::Bytes;
 use tracing::{debug, info};
 
-use crate::cache;
 use crate::state::{AppState, SharedTokenCache};
 
 fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
@@ -121,8 +120,7 @@ async fn do_proxy_request(
     if let Some(new_token) = response.headers().get("Set-Token") {
         if let Ok(token_str) = new_token.to_str() {
             let mut cache_guard = token_cache.write().await;
-            cache_guard.set_auth_token(token_str.to_string());
-            cache::save_cache(&endpoint, token_str).await;
+            cache_guard.store_auth_token(token_str.to_string()).await;
             info!(
                 "updated auth_token cache after requesting {}{}",
                 endpoint, path
@@ -189,8 +187,7 @@ pub async fn ping(endpoint: &str, token_cache: SharedTokenCache) {
         if let Some(new_token) = resp.headers().get("Set-Token") {
             if let Ok(token_str) = new_token.to_str() {
                 let mut cache_guard = token_cache.write().await;
-                cache_guard.set_auth_token(token_str.to_string());
-                cache::save_cache(endpoint, token_str).await;
+                cache_guard.store_auth_token(token_str.to_string()).await;
                 info!("updated auth_token cache via ping");
             }
         }

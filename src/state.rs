@@ -1,3 +1,4 @@
+use crate::cache;
 use crate::cli::Args;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -8,6 +9,7 @@ use tokio::sync::RwLock;
 pub struct AppState {
     endpoint: String,
     keys: HashSet<String>,
+    cache_dir: String,
 }
 
 impl AppState {
@@ -16,11 +18,16 @@ impl AppState {
         Self {
             endpoint: args.endpoint.clone(),
             keys,
+            cache_dir: args.cache_dir.clone(),
         }
     }
 
     pub fn endpoint(&self) -> &str {
         &self.endpoint
+    }
+
+    pub fn cache_dir(&self) -> &str {
+        &self.cache_dir
     }
 
     pub fn is_key_valid(&self, key: &str) -> bool {
@@ -29,15 +36,19 @@ impl AppState {
 }
 
 /// Mutable token cache (used as Extension)
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct TokenCache {
+    endpoint: String,
+    cache_dir: String,
     auth_token: Option<String>,
     valid: bool,
 }
 
 impl TokenCache {
-    pub fn new() -> Self {
+    pub fn new(endpoint: String, cache_dir: String) -> Self {
         Self {
+            endpoint,
+            cache_dir,
             auth_token: None,
             valid: true,
         }
@@ -49,6 +60,11 @@ impl TokenCache {
 
     pub fn set_auth_token(&mut self, token: String) {
         self.auth_token = Some(token);
+    }
+
+    pub async fn store_auth_token(&mut self, token: String) {
+        self.auth_token = Some(token.clone());
+        cache::save_cache(&self.cache_dir, &self.endpoint, &token).await;
     }
 
     pub fn is_valid(&self) -> bool {

@@ -1,17 +1,17 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use tracing::debug;
+use tracing::{debug, error};
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 struct CacheData(HashMap<String, String>);
 
-fn get_cache_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|home| home.join(".r2s-api-proxy").join("config.json"))
+fn get_cache_path(cache_dir: &str) -> PathBuf {
+    PathBuf::from(cache_dir).join("config.json")
 }
 
-pub async fn load_cache(endpoint: &str) -> Option<String> {
-    let path = get_cache_path()?;
+pub async fn load_cache(cache_dir: &str, endpoint: &str) -> Option<String> {
+    let path = get_cache_path(cache_dir);
 
     if !path.exists() {
         debug!("cache file does not exist");
@@ -24,16 +24,13 @@ pub async fn load_cache(endpoint: &str) -> Option<String> {
     cache.0.get(endpoint).cloned()
 }
 
-pub async fn save_cache(endpoint: &str, token: &str) {
-    let Some(path) = get_cache_path() else {
-        debug!("could not determine cache path");
-        return;
-    };
+pub async fn save_cache(cache_dir: &str, endpoint: &str, token: &str) {
+    let path = get_cache_path(cache_dir);
 
     // Create directory if not exists
     if let Some(parent) = path.parent() {
         if let Err(e) = tokio::fs::create_dir_all(parent).await {
-            debug!("failed to create cache directory: {}", e);
+            error!("failed to create cache directory: {}", e);
             return;
         }
     }
@@ -56,12 +53,12 @@ pub async fn save_cache(endpoint: &str, token: &str) {
     let json = match serde_json::to_string_pretty(&cache.0) {
         Ok(j) => j,
         Err(e) => {
-            debug!("failed to serialize cache: {}", e);
+            error!("failed to serialize cache: {}", e);
             return;
         }
     };
 
     if let Err(e) = tokio::fs::write(&path, json).await {
-        debug!("failed to write cache: {}", e);
+        error!("failed to write cache: {}", e);
     }
 }

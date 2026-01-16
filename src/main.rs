@@ -9,7 +9,7 @@ use clap::Parser;
 use rand::Rng;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::cli::Args;
 use crate::state::{AppState, SharedTokenCache, TokenCache};
@@ -30,7 +30,9 @@ async fn main() {
     // Initialize tracing
     logging::init_logger();
 
+    // Parse CLI arguments
     let mut args = Args::parse();
+    debug!("parsed arguments: {:?}", args);
 
     // Generate fallback key if no keys provided
     if args.key.is_empty() {
@@ -50,7 +52,10 @@ async fn main() {
     let _ = dotenvy::from_filename(".env.local");
 
     let state = AppState::new(&args);
-    let token_cache: SharedTokenCache = Arc::new(RwLock::new(TokenCache::new()));
+    let token_cache: SharedTokenCache = Arc::new(RwLock::new(TokenCache::new(
+        args.endpoint.clone(),
+        args.cache_dir.clone(),
+    )));
 
     // Perform auth_token validity check
     let valid = check_auth_token(&state, token_cache.clone()).await;
@@ -142,8 +147,7 @@ async fn check_auth_token(state: &AppState, token_cache: SharedTokenCache) -> bo
             if let Some(new_token) = resp.headers().get("Set-Token") {
                 if let Ok(token_str) = new_token.to_str() {
                     let mut cache_guard = token_cache.write().await;
-                    cache_guard.set_auth_token(token_str.to_string());
-                    cache::save_cache(&endpoint, token_str).await;
+                    cache_guard.store_auth_token(token_str.to_string()).await;
                     info!(
                         "updated auth_token cache after requesting {}/account/profile",
                         endpoint
@@ -153,8 +157,7 @@ async fn check_auth_token(state: &AppState, token_cache: SharedTokenCache) -> bo
 
             if resp.status().is_success() {
                 let mut cache_guard = token_cache.write().await;
-                cache_guard.set_auth_token(env_token.clone());
-                cache::save_cache(&endpoint, &env_token).await;
+                cache_guard.store_auth_token(env_token.clone()).await;
                 info!("using environment auth_token");
                 return true;
             }
@@ -162,7 +165,7 @@ async fn check_auth_token(state: &AppState, token_cache: SharedTokenCache) -> bo
     }
 
     // Try cached token
-    if let Some(cached_token) = cache::load_cache(&endpoint).await {
+    if let Some(cached_token) = cache::load_cache(state.cache_dir(), &endpoint).await {
         let response = client
             .get(&profile_url)
             .header("Authorization", format!("Bearer {}", cached_token))
@@ -174,8 +177,7 @@ async fn check_auth_token(state: &AppState, token_cache: SharedTokenCache) -> bo
             if let Some(new_token) = resp.headers().get("Set-Token") {
                 if let Ok(token_str) = new_token.to_str() {
                     let mut cache_guard = token_cache.write().await;
-                    cache_guard.set_auth_token(token_str.to_string());
-                    cache::save_cache(&endpoint, token_str).await;
+                    cache_guard.store_auth_token(token_str.to_string()).await;
                     info!(
                         "updated auth_token cache after requesting {}/account/profile",
                         endpoint
@@ -194,7 +196,9 @@ async fn check_auth_token(state: &AppState, token_cache: SharedTokenCache) -> bo
 
     // Check if we have any token at all
     let has_env_token = std::env::var("AUTH_TOKEN").is_ok();
-    let has_cached = cache::load_cache(&endpoint).await.is_some();
+    let has_cached = cache::load_cache(state.cache_dir(), &endpoint)
+        .await
+        .is_some();
 
     if !has_env_token && !has_cached {
         warn!("warning: auth_token not found");

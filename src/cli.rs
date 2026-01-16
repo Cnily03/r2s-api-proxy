@@ -28,6 +28,14 @@ pub struct Args {
     /// Base path for the proxy
     #[arg(long, default_value = "/", value_parser = parse_base_path)]
     pub base: String,
+
+    /// Configuration path
+    #[arg(short = 'd', long, default_value_t = {
+        dirs::home_dir()
+            .map(|home| format!("{}/.r2s-api-proxy", home.display()))
+            .unwrap_or_else(|| "/data/r2s-api-proxy".to_string())
+    })]
+    pub cache_dir: String,
 }
 
 fn parse_base_path(s: &str) -> Result<String, String> {
