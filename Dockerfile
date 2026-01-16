@@ -1,12 +1,13 @@
-FROM rust:1.90-alpine AS builder
+FROM rust:alpine AS builder
 
 # hadolint ignore=DL3018
-RUN apk add --update --no-cache musl-dev clang lld
+RUN apk add --update --no-cache openssl-dev openssl-libs-static musl-dev pkgconfig clang lld curl
 
 WORKDIR /var/lib/r2s-api-proxy
 
-ADD ./Cargo.* .
-ADD ./src/ ./src/
+ADD Cargo.* .
+ADD .cargo/ ./.cargo
+ADD src/ ./src/
 
 RUN --mount=type=cache,target=/var/lib/r2s-api-proxy/target cargo update && \
     cargo build --release --target x86_64-unknown-linux-musl && \
